@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS opt_orders (
 
 
 
--- Non-optimized example
+-- Non-optimized example 1
 SELECT c.name, c.surname, p.product_name, o.order_date
 FROM opt_clients c
 JOIN opt_orders o ON c.id = o.client_id
@@ -91,6 +91,62 @@ LIMIT 10;
                         -> Index lookup on o using idx_order_product_id (product_id=p.product_id)  (cost=266 rows=1063) (actual time=0.599..3.62 rows=1000 loops=199)
                 -> Filter: (c.`status` = 'active')  (cost=0.25 rows=0.5) (actual time=0.0022..0.00223 rows=0.499 loops=199026)
                     -> Single-row index lookup on c using PRIMARY (id=o.client_id)  (cost=0.25 rows=1) (actual time=0.00208..0.0021 rows=1 loops=199026)
+
+ */
+
+-- Non-optimized example 2
+
+SELECT 
+    (SELECT name FROM opt_clients c WHERE c.id = o.client_id AND c.status = 'active') AS name, 
+    (SELECT surname FROM opt_clients c WHERE c.id = o.client_id AND c.status = 'active') AS surname, 
+    (SELECT product_name FROM opt_products p WHERE p.product_id = o.product_id AND p.product_category = 'Category1') AS product_name, 
+    o.order_date
+FROM 
+    opt_orders o
+WHERE 
+    EXISTS (SELECT * FROM opt_clients c WHERE c.id = o.client_id AND c.status = 'active')
+    AND EXISTS (SELECT * FROM opt_products p WHERE p.product_id = o.product_id AND p.product_category = 'Category1')
+ORDER BY 
+    o.order_date DESC
+LIMIT 10;
+
+
+
+EXPLAIN ANALYZE SELECT 
+    (SELECT name FROM opt_clients c WHERE c.id = o.client_id AND c.status = 'active') AS name, 
+    (SELECT surname FROM opt_clients c WHERE c.id = o.client_id AND c.status = 'active') AS surname, 
+    (SELECT product_name FROM opt_products p WHERE p.product_id = o.product_id AND p.product_category = 'Category1') AS product_name, 
+    o.order_date
+FROM 
+    opt_orders o
+WHERE 
+    EXISTS (SELECT * FROM opt_clients c WHERE c.id = o.client_id AND c.status = 'active')
+    AND EXISTS (SELECT * FROM opt_products p WHERE p.product_id = o.product_id AND p.product_category = 'Category1')
+ORDER BY 
+    o.order_date DESC
+LIMIT 10;
+
+/*
+ * -> Limit: 10 row(s)  (actual time=1166..1166 rows=10 loops=1)
+    -> Sort: o.order_date DESC, limit input to 10 row(s) per chunk  (actual time=1165..1165 rows=10 loops=1)
+        -> Stream results  (cost=148045 rows=105731) (actual time=10.5..1157 rows=99363 loops=1)
+            -> Nested loop inner join  (cost=148045 rows=105731) (actual time=9.92..808 rows=99363 loops=1)
+                -> Nested loop inner join  (cost=74033 rows=211462) (actual time=9.59..431 rows=199026 loops=1)
+                    -> Filter: (p.product_category = 'Category1')  (cost=21 rows=199) (actual time=0.916..1 rows=199 loops=1)
+                        -> Covering index lookup on p using idx_product_category (product_category='Category1')  (cost=21 rows=199) (actual time=0.9..0.955 rows=199 loops=1)
+                    -> Filter: (o.client_id is not null)  (cost=266 rows=1063) (actual time=0.226..2.12 rows=1000 loops=199)
+                        -> Index lookup on o using idx_order_product_id (product_id=p.product_id)  (cost=266 rows=1063) (actual time=0.226..2.09 rows=1000 loops=199)
+                -> Filter: (c.`status` = 'active')  (cost=0.25 rows=0.5) (actual time=0.0018..0.00182 rows=0.499 loops=199026)
+                    -> Single-row index lookup on c using PRIMARY (id=o.client_id)  (cost=0.25 rows=1) (actual time=0.00168..0.00169 rows=1 loops=199026)
+-> Select #2 (subquery in projection; dependent)
+    -> Filter: (c.`status` = 'active')  (cost=0.3 rows=0.5) (actual time=0.00112..0.00117 rows=1 loops=99363)
+        -> Single-row index lookup on c using PRIMARY (id=o.client_id)  (cost=0.3 rows=1) (actual time=0.00101..0.00103 rows=1 loops=99363)
+-> Select #3 (subquery in projection; dependent)
+    -> Filter: (c.`status` = 'active')  (cost=0.3 rows=0.5) (actual time=0.0011..0.00116 rows=1 loops=99363)
+        -> Single-row index lookup on c using PRIMARY (id=o.client_id)  (cost=0.3 rows=1) (actual time=994e-6..0.00101 rows=1 loops=99363)
+-> Select #4 (subquery in projection; dependent)
+    -> Filter: (p.product_category = 'Category1')  (cost=0.27 rows=0.199) (actual time=562e-6..615e-6 rows=1 loops=99363)
+        -> Single-row index lookup on p using PRIMARY (product_id=o.product_id)  (cost=0.27 rows=1) (actual time=424e-6..443e-6 rows=1 loops=99363)
 
  */
 
